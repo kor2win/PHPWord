@@ -356,7 +356,7 @@ class TemplateProcessor
     public function replaceBlock($blockname, $replacement)
     {
         preg_match(
-            '/(<\?xml.*)(<w:p.*>\${' . $blockname . '}<\/w:.*?p>)(.*)(<w:p.*\${\/' . $blockname . '}<\/w:.*?p>)/is',
+            '/(<\?xml.*)(<w:p\b.*>\${' . $blockname . '}<\/w:.*?p>)(.*)(<w:p\b.*\${\/' . $blockname . '}<\/w:.*?p>)/is',
             $this->tempDocumentMainPart,
             $matches
         );
@@ -373,11 +373,47 @@ class TemplateProcessor
     /**
      * Delete a block of text.
      *
-     * @param string $blockname
+     * @param string $block_name
      */
-    public function deleteBlock($blockname)
+    public function deleteBlock($block_name)
     {
-        $this->replaceBlock($blockname, '');
+	    $xml = new \DOMDocument();
+	    $xml->loadXML($this->tempDocumentMainPart);
+	    $document = $xml->documentElement;
+	    $body = $document->getElementsByTagName('body')->item(0);
+
+	    $block_was_opened = false;
+
+	    $open = '${' . $block_name . '}';
+	    $close = '${/' . $block_name . '}';
+
+	    /** @var \DOMElement $node */
+	    $DOMNodeList = iterator_to_array($body->childNodes);
+	    foreach ($DOMNodeList as $node)
+	    {
+		    $text_content = trim($node->textContent);
+
+		    if ($block_was_opened)
+		    {
+			    $body->removeChild($node);
+
+			    if ($text_content == $close)
+			    {
+				    break;
+			    }
+		    }
+		    else
+		    {
+			    if ($text_content == $open)
+			    {
+				    $block_was_opened = true;
+
+				    $body->removeChild($node);
+			    }
+		    }
+	    }
+
+	    $this->tempDocumentMainPart = $xml->saveXML();
     }
 
     /**
@@ -431,6 +467,18 @@ class TemplateProcessor
         copy($tempFileName, $fileName);
         unlink($tempFileName);
     }
+
+	public function toggleBlock($block_name, $toggle)
+	{
+		if ($toggle)
+		{
+			$this->removeBlockWrap($block_name);
+		}
+		else
+		{
+			$this->deleteBlock($block_name);
+		}
+	}
 
     /**
      * Finds parts of broken macros and sticks them together.
@@ -573,4 +621,45 @@ class TemplateProcessor
 
         return substr($this->tempDocumentMainPart, $startPosition, ($endPosition - $startPosition));
     }
+
+	private function removeBlockWrap($block_name)
+	{
+		$xml = new \DOMDocument();
+		$xml->loadXML($this->tempDocumentMainPart);
+		$document = $xml->documentElement;
+		$body = $document->getElementsByTagName('body')->item(0);
+
+		$block_was_opened = false;
+
+		$open = '${' . $block_name . '}';
+		$close = '${/' . $block_name . '}';
+
+		/** @var \DOMElement $node */
+		$DOMNodeList = iterator_to_array($body->childNodes);
+		foreach ($DOMNodeList as $node)
+		{
+			$text_content = trim($node->textContent);
+
+			if ($block_was_opened)
+			{
+				if ($text_content == $close)
+				{
+					$body->removeChild($node);
+
+					break;
+				}
+			}
+			else
+			{
+				if ($text_content == $open)
+				{
+					$block_was_opened = true;
+
+					$body->removeChild($node);
+				}
+			}
+		}
+
+		$this->tempDocumentMainPart = $xml->saveXML();
+	}
 }
